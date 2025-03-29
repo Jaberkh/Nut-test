@@ -712,7 +712,7 @@ app.frame('/', async (c) => {
                   top: "64%",
                   left: "33%",
                   color: "#28a745",
-                  fontSize: "28px",
+                  fontSize: "23px",
                   fontWeight: "bold",
                 }}
               >
