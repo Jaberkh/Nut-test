@@ -710,16 +710,10 @@ app.frame('/', async (c) => {
                 style={{
                   position: "absolute",
                   top: "64%",
-                  left: "36%",
-                  color: "#e83e8c", // Pink color for better visibility
-                  fontSize: "28px",
+                  left: "30%",
+                  fontSize: "20px",
                   fontWeight: "bold",
-                  textShadow: "0px 0px 5px rgba(255,255,255,0.5)",
-                  cursor: "pointer",
-                  background: "linear-gradient(45deg, #ff4081, #7b1fa2)",
-                  padding: "2px 10px",
-                  borderRadius: "8px",
-                  border: "2px solid white",
+
                 }}
               >
                 {remainingAllowance}
