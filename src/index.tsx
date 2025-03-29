@@ -709,10 +709,10 @@ app.frame('/', async (c) => {
               <p
                 style={{
                   position: "absolute",
-                  top: "64%",
+                  top: "66%",
                   left: "33%",
                   color: "#28a745",
-                  fontSize: "23px",
+                  fontSize: "18px",
                   fontWeight: "bold",
                 }}
               >
