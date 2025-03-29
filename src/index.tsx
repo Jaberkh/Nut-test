@@ -94,23 +94,36 @@ async function fetchWithTimeoutAndRetry(url: string, options: RequestInit, timeo
 // توابع
 function checkRateLimit(): { isAllowed: boolean; isLoading: boolean } {
   const now = Date.now();
+  
+  // پاک کردن تایم‌استمپ‌های قدیمی
   while (secondTimestamps.length > 0 && now - secondTimestamps[0] > SECOND_DURATION) {
     secondTimestamps.shift();
   }
   while (minuteTimestamps.length > 0 && now - minuteTimestamps[0] > MINUTE_DURATION) {
     minuteTimestamps.shift();
   }
-  if (secondTimestamps.length >= MAX_RPS || minuteTimestamps.length >= MAX_RPM) {
-    console.log('[RateLimit] Too many requests. RPS:', secondTimestamps.length, 'RPM:', minuteTimestamps.length);
+  
+  // افزودن تایم‌استمپ فقط اگر مجاز باشد
+  if (secondTimestamps.length >= MAX_RPS) {
+    console.log('[RateLimit] Too many requests per second:', secondTimestamps.length);
     return { isAllowed: false, isLoading: false };
   }
-  if (secondTimestamps.length >= LOAD_THRESHOLD) {
-    console.log('[RateLimit] Approaching limit. Switching to loading state. RPS:', secondTimestamps.length);
+  
+  if (minuteTimestamps.length >= MAX_RPM) {
+    console.log('[RateLimit] Too many requests per minute:', minuteTimestamps.length);
+    return { isAllowed: false, isLoading: false };
+  }
+  
+  // اضافه کردن یک حالت "در حال بررسی" برای زمانی که به حد مجاز نزدیک می‌شویم
+  if (secondTimestamps.length >= MAX_RPS * 0.8 || minuteTimestamps.length >= MAX_RPM * 0.9) {
+    console.log('[RateLimit] Approaching limit. Switching to loading state.');
     return { isAllowed: true, isLoading: true };
   }
+  
+  // ثبت تایم‌استمپ جدید
   secondTimestamps.push(now);
   minuteTimestamps.push(now);
-  console.log('[RateLimit] Allowed. RPS Remaining:', MAX_RPS - secondTimestamps.length, 'RPM Remaining:', MAX_RPM - minuteTimestamps.length);
+  
   return { isAllowed: true, isLoading: false };
 }
 
@@ -161,7 +174,7 @@ async function executeQuery(queryId: string): Promise<string | null> {
       `https://api.dune.com/api/v1/query/${queryId}/execute`,
       {
         method: 'POST',
-        headers: { 'X-Dune-API-Key': '7mLA92ZMmtza1UvyP5Ug75mQtDgupmRK' }
+        headers: { 'X-Dune-API-Key': 'jaXtS6fQFj8jFgU2Kk11NYa1k0Xt41J0' }
       },
       5000,
       3
@@ -183,7 +196,7 @@ async function fetchQueryResult(executionId: string, queryId: string): Promise<A
       `https://api.dune.com/api/v1/execution/${executionId}/results`,
       {
         method: 'GET',
-        headers: { 'X-Dune-API-Key': '7mLA92ZMmtza1UvyP5Ug75mQtDgupmRK' }
+        headers: { 'X-Dune-API-Key': 'jaXtS6fQFj8jFgU2Kk11NYa1k0Xt41J0' }
       },
       5000,
       3
@@ -356,20 +369,39 @@ function scheduleUpdates() {
 console.log('[Server] Starting update scheduler');
 scheduleUpdates();
 
+// تابع بهبود یافته برای فراخوانی API نیینار با تایم‌اوت مناسب
 async function getWalletAddressFromFid(fid: string): Promise<{ wallet1: string | null; wallet2: string | null }> {
   console.log(`[Neynar] Fetching verified wallet addresses for FID ${fid}`);
   if (fid === 'N/A') {
     console.log('[Neynar] FID is N/A, skipping request');
     return { wallet1: null, wallet2: null };
   }
+  
+  // اضافه کردن منطق کش ساده
+  const cacheKey = `wallet_${fid}`;
+  const cachedWallet = userDataCache.get(cacheKey);
+  if (cachedWallet && (Date.now() - cachedWallet.timestamp < 3600000)) { // 1 ساعت
+    return cachedWallet.data;
+  }
+  
   try {
+    // اضافه کردن تایم‌اوت به درخواست
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000); // تایم‌اوت 2 ثانیه
+    
     const response = await client.fetchBulkUsers({ fids: [Number(fid)] });
+    clearTimeout(timeoutId);
+    
     const user = response.users[0];
     const ethAddresses = user?.verified_addresses?.eth_addresses || [];
     const wallet1 = ethAddresses[0] || null;
     const wallet2 = ethAddresses[1] || null;
+    
+    const result = { wallet1, wallet2 };
+    userDataCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    
     console.log(`[Neynar] Verified wallets for FID ${fid}: Wallet1: ${wallet1}, Wallet2: ${wallet2}`);
-    return { wallet1, wallet2 };
+    return result;
   } catch (error) {
     console.error(`[Neynar] Error fetching verified wallet addresses: ${error}`);
     return { wallet1: null, wallet2: null };
@@ -439,19 +471,22 @@ async function isNewNFTHolder(fid: string): Promise<number> {
   }
 }
 
-async function getUserDataFromCache(fid: string): Promise<{
-  todayPeanutCount: number;
-  totalPeanutCount: number;
-  sentPeanutCount: number;
-  remainingAllowance: string;
-  userRank: number;
-  reduceEndSeason: string;
-  verifiedWallet1: string;
-  verifiedWallet2: string;
-  warpcastVerifiedLink1: string;
-  warpcastVerifiedLink2: string;
-}> {
-  console.log(`[Data] Fetching data strictly from cache.json for FID ${fid}`);
+// جلوگیری از فراخوانی‌های مکرر API با کش در حافظه
+const userDataCache = new Map<string, { data: any; timestamp: number }>();
+const USER_CACHE_TTL = 30000; // 30 ثانیه
+
+async function getUserDataFromCache(fid: string) {
+  // بررسی اگر داده در کش حافظه وجود دارد
+  const cacheKey = `user_${fid}`;
+  const now = Date.now();
+  const cachedData = userDataCache.get(cacheKey);
+  
+  if (cachedData && (now - cachedData.timestamp < USER_CACHE_TTL)) {
+    console.log(`[Cache] Using in-memory cache for FID ${fid}`);
+    return cachedData.data;
+  }
+  
+  console.log(`[Data] Fetching data for FID ${fid}`);
   const userRow = cache.queries['4837362'].rows.find((row) => row.fid === fid) || { data: {}, cumulativeExcess: 0 };
   const userData: ApiRow = userRow.data;
 
@@ -512,271 +547,318 @@ async function getUserDataFromCache(fid: string): Promise<{
   const warpcastVerifiedLink2 = wallet2 ? `https://warpcast.com/~/profile/${fid}` : 'N/A';
 
   console.log(`[Data] FID ${fid} - Today: ${todayPeanutCount}, Total: ${totalPeanutCount}, Sent: ${sentPeanutCount}, Allowance: ${remainingAllowance}, Rank: ${userRank}, ReduceEndSeason: ${reduceEndSeason}, VerifiedWallet1: ${verifiedWallet1}, VerifiedWallet2: ${verifiedWallet2}`);
-  return { todayPeanutCount, totalPeanutCount, sentPeanutCount, remainingAllowance, userRank, reduceEndSeason, verifiedWallet1, verifiedWallet2, warpcastVerifiedLink1, warpcastVerifiedLink2 };
+  const result = { todayPeanutCount, totalPeanutCount, sentPeanutCount, remainingAllowance, userRank, reduceEndSeason, verifiedWallet1, verifiedWallet2, warpcastVerifiedLink1, warpcastVerifiedLink2 };
+  
+  // ذخیره نتیجه در کش حافظه
+  userDataCache.set(cacheKey, { data: result, timestamp: now });
+  
+  return result;
 }
 
+// اضافه کردن سِمافور ساده برای محدود کردن تعداد درخواست‌های همزمان
+const semaphore = {
+  count: 0,
+  max: 20, // حداکثر 20 درخواست همزمان
+  queue: [] as (() => void)[],
+  
+  async acquire() {
+    if (this.count >= this.max) {
+      await new Promise<void>(resolve => this.queue.push(resolve));
+    }
+    this.count++;
+  },
+  
+  release() {
+    this.count--;
+    const next = this.queue.shift();
+    if (next) next();
+  }
+};
+
 app.frame('/', async (c) => {
-  console.log(`[Frame] Request received at ${new Date().toUTCString()}`);
-  const rateLimitStatus = checkRateLimit();
-
-  if (!rateLimitStatus.isAllowed) {
-    return c.res({
-      image: (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%', backgroundColor: '#ffcccc' }}>
-          <p style={{ color: '#ff0000', fontSize: '30px', fontFamily: 'Poetsen One' }}>Too many requests. Wait a moment.</p>
-        </div>
-      ),
-      intents: [<Button value="my_state">Try Again</Button>]
-    });
-  }
-
-  if (rateLimitStatus.isLoading) {
-    return c.res({
-      image: (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%', backgroundColor: '#fff3cd' }}>
-          <p style={{ color: '#856404', fontSize: '30px', fontFamily: 'Poetsen One' }}>Loading... Please wait.</p>
-        </div>
-      ),
-      intents: [<Button value="my_state">Try Again</Button>]
-    });
-  }
-
-  const urlParams = new URLSearchParams(c.req.url.split('?')[1]);
-  const defaultInteractor = { fid: "N/A", username: "Unknown", pfpUrl: "" };
-  const interactor = (c.var as any)?.interactor ?? defaultInteractor;
-
-  const fid = String(urlParams.get("fid") || interactor.fid || "N/A");
-  const username = urlParams.get("username") || interactor.username || "Unknown";
-  const pfpUrl = urlParams.get("pfpUrl") || interactor.pfpUrl || "";
-
-  const { todayPeanutCount, totalPeanutCount, sentPeanutCount, remainingAllowance, userRank, reduceEndSeason, verifiedWallet1, verifiedWallet2, warpcastVerifiedLink1, warpcastVerifiedLink2 } = await getUserDataFromCache(fid);
-  const hashId = await getOrGenerateHashId(fid);
-  const frameUrl = `https://nuts-state.up.railway.app/?hashid=${hashId}&fid=${fid}&username=${encodeURIComponent(username)}&pfpUrl=${encodeURIComponent(pfpUrl)}`;
-  const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent('Check out your 🥜 stats! \n\n Frame by @arsalang.eth & @jeyloo.eth ')}&embeds[]=${encodeURIComponent(frameUrl)}`;
-
   try {
-    console.log("usertype:", Usertype);
-    return c.res({
-      image: (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            width: "100%",
-            height: "100%",
-            backgroundColor: "black",
-            color: "white",
-            fontFamily: "'Lilita One','Poppins'",
-            position: "relative",
-            overflow: "hidden",
-          }}
-        >
-          <img
-            src="/bg.png"
+    // بررسی rate limit
+    const rateLimitStatus = checkRateLimit();
+    if (!rateLimitStatus.isAllowed) {
+      // کد موجود برای پاسخ rate limit
+      return c.res({
+        image: (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%', backgroundColor: '#ffcccc' }}>
+            <p style={{ color: '#ff0000', fontSize: '30px', fontFamily: 'Poetsen One' }}>Too many requests. Wait a moment.</p>
+          </div>
+        ),
+        intents: [<Button value="my_state">Try Again</Button>]
+      });
+    }
+    
+    // اکتساب سِمافور با تایم‌اوت
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Semaphore acquisition timeout')), 1000);
+    });
+    
+    try {
+      await Promise.race([semaphore.acquire(), timeoutPromise]);
+    } catch (error) {
+      return c.res({
+        image: (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%', backgroundColor: '#fff3cd' }}>
+            <p style={{ color: '#856404', fontSize: '30px', fontFamily: 'Poetsen One' }}>Server is busy. Please try again.</p>
+          </div>
+        ),
+        intents: [<Button value="my_state">Try Again</Button>]
+      });
+    }
+    
+    // کد اصلی پردازش با تایم‌اوت
+    try {
+      console.log(`[Frame] Request received at ${new Date().toUTCString()}`);
+      const urlParams = new URLSearchParams(c.req.url.split('?')[1]);
+      const defaultInteractor = { fid: "N/A", username: "Unknown", pfpUrl: "" };
+      const interactor = (c.var as any)?.interactor ?? defaultInteractor;
+
+      const fid = String(urlParams.get("fid") || interactor.fid || "N/A");
+      const username = urlParams.get("username") || interactor.username || "Unknown";
+      const pfpUrl = urlParams.get("pfpUrl") || interactor.pfpUrl || "";
+
+      const { todayPeanutCount, totalPeanutCount, sentPeanutCount, remainingAllowance, userRank, reduceEndSeason, verifiedWallet1, verifiedWallet2, warpcastVerifiedLink1, warpcastVerifiedLink2 } = await getUserDataFromCache(fid);
+      const hashId = await getOrGenerateHashId(fid);
+      const frameUrl = `https://nuts-state.up.railway.app/?hashid=${hashId}&fid=${fid}&username=${encodeURIComponent(username)}&pfpUrl=${encodeURIComponent(pfpUrl)}`;
+      const composeCastUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent('Check out your 🥜 stats! \n\n Frame by @arsalang.eth & @jeyloo.eth ')}&embeds[]=${encodeURIComponent(frameUrl)}`;
+
+      console.log("usertype:", Usertype);
+      return c.res({
+        image: (
+          <div
             style={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
               width: "100%",
               height: "100%",
-              objectFit: "contain",
-              position: "absolute",
-              top: 0,
-              left: 0,
-            }}
-          />
-          {pfpUrl && (
-            <img
-              src={anticURLSanitize(pfpUrl)}
-              alt="Profile Picture"
-              style={{
-                width: "160px",
-                height: "160px",
-                borderRadius: "50%",
-                position: "absolute",
-                top: "3.5%",
-                left: "25.5%",
-                border: "3px solid white",
-              }}
-            />
-          )}
-          <p
-            style={{
-              position: "absolute",
-              top: "8%",
-              left: "57%",
-              transform: "translateX(-50%)",
-              color: "cyan",
-              fontSize: "30px",
-              fontWeight: "700",
-            }}
-          >
-            {username}
-          </p>
-          <p
-            style={{
-              position: "absolute",
-              top: "14%",
-              left: "57%",
-              transform: "translateX(-50%)",
+              backgroundColor: "black",
               color: "white",
-              fontSize: "15px",
-              fontWeight: "500",
+              fontFamily: "'Lilita One','Poppins'",
+              position: "relative",
+              overflow: "hidden",
             }}
           >
-            {fid}
-          </p>
-          <p
-            style={{
-              position: "absolute",
-              top: "46%",
-              left: "58%",
-              color: "#ff8c00",
-              fontSize: "33px",
-            }}
-          >
-            {totalPeanutCount}
-          </p>
-          <p
-            style={{
-              position: "absolute",
-              top: "64%",
-              left: "36%",
-              color: "#28a745",
-              fontSize: "33px",
-            }}
-          >
-            {remainingAllowance}
-          </p>
-          <p
-            style={{
-              position: "absolute",
-              top: "46%",
-              left: "40%",
-              color: "#ff8c00",
-              fontSize: "33px",
-            }}
-          >
-            {todayPeanutCount}
-          </p>
-          <p
-            style={{
-              position: "absolute",
-              top: "80%",
-              left: "62%",
-              color: "#ffffff",
-              fontSize: "23px",
-            }}
-          >
-            {verifiedWallet1}
-          </p>
-          <p
-            style={{
-              position: "absolute",
-              top: "85%",
-              left: "62%",
-              color: "#ffffff",
-              fontSize: "23px",
-            }}
-          >
-            {verifiedWallet2}
-          </p>
-          <p
-            style={{
-              position: "absolute",
-              top: "64%",
-              left: "58%",
-              color: "#007bff",
-              fontSize: "33px",
-            }}
-          >
-            {userRank}
-          </p>
-          {OGpic > 0 && (
             <img
-              src="/og.png"
-              width="131"
-              height="187"
+              src="/bg.png"
               style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
                 position: "absolute",
-                top: "7.8%",
-                left: "37.5%",
+                top: 0,
+                left: 0,
               }}
             />
-          )}
-          {(Usertype === "Member" || Usertype === "Regular" || Usertype === "Active") && (
-            <img
-              src="/member.png"
-              width="100"
-              height="100"
+            {pfpUrl && (
+              <img
+                src={anticURLSanitize(pfpUrl)}
+                alt="Profile Picture"
+                style={{
+                  width: "160px",
+                  height: "160px",
+                  borderRadius: "50%",
+                  position: "absolute",
+                  top: "3.5%",
+                  left: "25.5%",
+                  border: "3px solid white",
+                }}
+              />
+            )}
+            <p
               style={{
                 position: "absolute",
-                top: "25%",
-                left: "66%",
+                top: "8%",
+                left: "57%",
+                transform: "translateX(-50%)",
+                color: "cyan",
+                fontSize: "30px",
+                fontWeight: "700",
               }}
-            />
-          )}
-          {(Usertype === "Regular" || Usertype === "Active") && (
-            <img
-              src="/regular.png"
-              width="100"
-              height="100"
+            >
+              {username}
+            </p>
+            <p
               style={{
                 position: "absolute",
-                top: "25%",
-                left: "57.5%",
+                top: "14%",
+                left: "57%",
+                transform: "translateX(-50%)",
+                color: "white",
+                fontSize: "15px",
+                fontWeight: "500",
               }}
-            />
-          )}
-          {Usertype === "Active" && (
-            <img
-              src="/active.png"
-              width="100"
-              height="100"
+            >
+              {fid}
+            </p>
+            <p
               style={{
                 position: "absolute",
-                top: "25%",
-                left: "49%",
+                top: "46%",
+                left: "58%",
+                color: "#ff8c00",
+                fontSize: "33px",
               }}
-            />
-          )}
-          {reduceEndSeason === "" && (
-            <img
-              src="/tik.png"
-              width="55"
-              height="55"
+            >
+              {totalPeanutCount}
+            </p>
+            <p
               style={{
                 position: "absolute",
-                top: "83%",
+                top: "64%",
+                left: "36%",
+                color: "#28a745",
+                fontSize: "33px",
+              }}
+            >
+              {remainingAllowance}
+            </p>
+            <p
+              style={{
+                position: "absolute",
+                top: "46%",
+                left: "40%",
+                color: "#ff8c00",
+                fontSize: "33px",
+              }}
+            >
+              {todayPeanutCount}
+            </p>
+            <p
+              style={{
+                position: "absolute",
+                top: "80%",
+                left: "62%",
+                color: "#ffffff",
+                fontSize: "23px",
+              }}
+            >
+              {verifiedWallet1}
+            </p>
+            <p
+              style={{
+                position: "absolute",
+                top: "85%",
+                left: "62%",
+                color: "#ffffff",
+                fontSize: "23px",
+              }}
+            >
+              {verifiedWallet2}
+            </p>
+            <p
+              style={{
+                position: "absolute",
+                top: "64%",
+                left: "58%",
+                color: "#007bff",
+                fontSize: "33px",
+              }}
+            >
+              {userRank}
+            </p>
+            {OGpic > 0 && (
+              <img
+                src="/og.png"
+                width="131"
+                height="187"
+                style={{
+                  position: "absolute",
+                  top: "7.8%",
+                  left: "37.5%",
+                }}
+              />
+            )}
+            {(Usertype === "Member" || Usertype === "Regular" || Usertype === "Active") && (
+              <img
+                src="/member.png"
+                width="100"
+                height="100"
+                style={{
+                  position: "absolute",
+                  top: "25%",
+                  left: "66%",
+                }}
+              />
+            )}
+            {(Usertype === "Regular" || Usertype === "Active") && (
+              <img
+                src="/regular.png"
+                width="100"
+                height="100"
+                style={{
+                  position: "absolute",
+                  top: "25%",
+                  left: "57.5%",
+                }}
+              />
+            )}
+            {Usertype === "Active" && (
+              <img
+                src="/active.png"
+                width="100"
+                height="100"
+                style={{
+                  position: "absolute",
+                  top: "25%",
+                  left: "49%",
+                }}
+              />
+            )}
+            {reduceEndSeason === "" && (
+              <img
+                src="/tik.png"
+                width="55"
+                height="55"
+                style={{
+                  position: "absolute",
+                  top: "83%",
+                  left: "35%",
+                }}
+              />
+            )}
+            <p
+              style={{
+                position: "absolute",
+                top: "81%",
                 left: "35%",
+                color: "#ff0000",
+                fontSize: "35px",
               }}
-            />
-          )}
-          <p
-            style={{
-              position: "absolute",
-              top: "81%",
-              left: "35%",
-              color: "#ff0000",
-              fontSize: "35px",
-            }}
-          >
-            {reduceEndSeason}
-          </p>
-        </div>
-      ),
-      intents: [
-        <Button value="my_state">My State</Button>,
-        <Button.Link href={composeCastUrl}>Share</Button.Link>,
-        <Button.Link href="https://foundation.app/mint/base/0x8AaB3b53d0F29A3EE07B24Ea253494D03a42e2fB">Be OG</Button.Link>,
-        <Button.Link href="https://foundation.app/mint/base/0x36d4a78d0FB81A16A1349b8f95AF7d5d3CA25081">Allowance</Button.Link>,
-      ],
-    });
+            >
+              {reduceEndSeason}
+            </p>
+          </div>
+        ),
+        intents: [
+          <Button value="my_state">My State</Button>,
+          <Button.Link href={composeCastUrl}>Share</Button.Link>,
+          <Button.Link href="https://foundation.app/mint/base/0x8AaB3b53d0F29A3EE07B24Ea253494D03a42e2fB">Be OG</Button.Link>,
+          <Button.Link href="https://foundation.app/mint/base/0x36d4a78d0FB81A16A1349b8f95AF7d5d3CA25081">Allowance</Button.Link>,
+        ],
+      });
+    } catch (error) {
+      console.error('[Frame] Error processing request:', error);
+      return c.res({
+        image: (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%', backgroundColor: '#ffcccc' }}>
+            <p style={{ color: '#ff0000', fontSize: '30px', fontFamily: 'Poetsen One' }}>Error processing request. Please try again.</p>
+          </div>
+        ),
+        intents: [<Button value="my_state">Try Again</Button>]
+      });
+    } finally {
+      semaphore.release();
+    }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[Frame] Render error:', errorMessage);
+    console.error('[Frame] Unexpected error:', error);
     return c.res({
       image: (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%', backgroundColor: '#ffcccc' }}>
-          <p style={{ color: '#ff0000', fontSize: '30px', fontFamily: 'Poetsen One' }}>Error rendering frame. Please try again.</p>
+          <p style={{ color: '#ff0000', fontSize: '30px', fontFamily: 'Poetsen One' }}>Unexpected error. Please try again.</p>
         </div>
       ),
       intents: [<Button value="my_state">Try Again</Button>]
