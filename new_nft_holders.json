@@ -85,7 +85,27 @@
       "count": 1
     },
     {
+      "wallet": "0x068d7409d33b3e0d4722cda87b3de239116206d0",
+      "count": 1
+    },
+    {
       "wallet": "0x274a347149a6abbd8dc5181e027396b6dc269904",
+      "count": 1
+    },
+    {
+      "wallet": "0x728e5e69d06286bfaf4e2cb1716d98d55c56f65c",
+      "count": 1
+    },
+    {
+      "wallet": "0x644c018b8d0b53c615cc68541877e1cc98c64066",
+      "count": 1
+    },
+    {
+      "wallet": "0xe1a951308cc5f24a62986cf6a9ac26edc1b6a418",
+      "count": 1
+    },
+    {
+      "wallet": "0xb61712f928927cc88b05e376579e0bc76c5b6b06",
       "count": 1
     },
     {
@@ -113,5 +133,5 @@
       "count": 1
     }
   ],
-  "last_updated": 1743250633067
+  "last_updated": 1743264795614
 }
