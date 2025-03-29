@@ -32,7 +32,7 @@ let cache: {
   updateCountToday: number;
   lastUpdateDay: number;
 } = {
-  queries: { '4837362': { rows: [], lastUpdated: 0 } },
+  queries: { '4918743': { rows: [], lastUpdated: 0 } },
   initialFetchDone: false,
   updateCountToday: 0,
   lastUpdateDay: 0
@@ -133,17 +133,17 @@ async function loadCache() {
     const data = await fs.readFile(cacheFile, 'utf8');
     const loadedCache = JSON.parse(data) as typeof cache;
     cache = {
-      queries: { '4837362': loadedCache.queries['4837362'] || { rows: [], lastUpdated: 0 } },
+      queries: { '4918743': loadedCache.queries['4918743'] || { rows: [], lastUpdated: 0 } },
       initialFetchDone: loadedCache.initialFetchDone || false,
       updateCountToday: loadedCache.updateCountToday || 0,
       lastUpdateDay: loadedCache.lastUpdateDay || 0
     };
-    cache.queries['4837362'].rows = cache.queries['4837362'].rows.map(row => ({
+    cache.queries['4918743'].rows = cache.queries['4918743'].rows.map(row => ({
       fid: String(row.fid || (row.data && row.data.fid) || (row.data && row.data.parent_fid) || ''),
       data: row.data || row,
       cumulativeExcess: row.cumulativeExcess || 0
     }));
-    console.log(`[Cache] Loaded from cache.json: rows=${cache.queries['4837362'].rows.length}`);
+    console.log(`[Cache] Loaded from cache.json: rows=${cache.queries['4918743'].rows.length}`);
   } catch (error) {
     console.log('[Cache] No cache file found or invalid JSON. Starting fresh');
   }
@@ -152,7 +152,7 @@ async function loadCache() {
 async function saveCache() {
   console.log('[Cache] Saving cache to cache.json');
   await fs.writeFile(cacheFile, JSON.stringify(cache, null, 2));
-  console.log(`[Cache] Cache saved to cache.json with ${cache.queries['4837362'].rows.length} rows`);
+  console.log(`[Cache] Cache saved to cache.json with ${cache.queries['4918743'].rows.length} rows`);
 }
 
 console.log('[Server] Initializing cache');
@@ -171,7 +171,7 @@ async function executeQuery(queryId: string): Promise<string | null> {
   console.log(`[API] Executing Query ${queryId} (Request #${++apiRequestCount}) - 1 credit consumed`);
   try {
     const response = await fetchWithTimeoutAndRetry(
-      `https://api.dune.com/api/v1/query/${queryId}/execute`,
+      `https://api.dune.com/api/v1/query/${queryId}/execute?limit=5000`,
       {
         method: 'POST',
         headers: { 'X-Dune-API-Key': 'jaXtS6fQFj8jFgU2Kk11NYa1k0Xt41J0' }
@@ -193,7 +193,7 @@ async function fetchQueryResult(executionId: string, queryId: string): Promise<A
   console.log(`[API] Fetching results for Query ${queryId} with execution ID ${executionId} (Request #${++apiRequestCount}) - 1 credit consumed`);
   try {
     const response = await fetchWithTimeoutAndRetry(
-      `https://api.dune.com/api/v1/execution/${executionId}/results`,
+      `https://api.dune.com/api/v1/execution/${executionId}/results?limit=5000`,
       {
         method: 'GET',
         headers: { 'X-Dune-API-Key': 'jaXtS6fQFj8jFgU2Kk11NYa1k0Xt41J0' }
@@ -286,7 +286,7 @@ async function updateQueries() {
     console.log('[Update] Entering updateQueries');
     const now = Date.now();
     const currentDay = getCurrentUTCDay();
-    const queryId = '4837362';
+    const queryId = '4918743';
 
     const lastUpdated = cache.queries[queryId].lastUpdated;
     const isCacheEmpty = cache.queries[queryId].rows.length === 0;
@@ -487,7 +487,7 @@ async function getUserDataFromCache(fid: string) {
   }
   
   console.log(`[Data] Fetching data for FID ${fid}`);
-  const userRow = cache.queries['4837362'].rows.find((row) => row.fid === fid) || { data: {}, cumulativeExcess: 0 };
+  const userRow = cache.queries['4918743'].rows.find((row) => row.fid === fid) || { data: {}, cumulativeExcess: 0 };
   const userData: ApiRow = userRow.data;
 
   const todayPeanutCount = userData.daily_peanut_count || 0;
@@ -531,11 +531,11 @@ async function getUserDataFromCache(fid: string) {
     }
   }
 
-  const existingRowIndex = cache.queries['4837362'].rows.findIndex(row => row.fid === fid);
+  const existingRowIndex = cache.queries['4918743'].rows.findIndex(row => row.fid === fid);
   if (existingRowIndex !== -1 && (ogNFTCount > 0 || newNFTCount > 0)) {
-    cache.queries['4837362'].rows[existingRowIndex].cumulativeExcess = userRow.cumulativeExcess + (sentPeanutCount > maxAllowance ? sentPeanutCount - maxAllowance : 0);
+    cache.queries['4918743'].rows[existingRowIndex].cumulativeExcess = userRow.cumulativeExcess + (sentPeanutCount > maxAllowance ? sentPeanutCount - maxAllowance : 0);
   } else if (existingRowIndex === -1 && (ogNFTCount > 0 || newNFTCount > 0)) {
-    cache.queries['4837362'].rows.push({ fid, data: userData, cumulativeExcess: sentPeanutCount > maxAllowance ? sentPeanutCount - maxAllowance : 0 });
+    cache.queries['4918743'].rows.push({ fid, data: userData, cumulativeExcess: sentPeanutCount > maxAllowance ? sentPeanutCount - maxAllowance : 0 });
   }
 
   const userRank = userData.rank || 0;

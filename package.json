@@ -3,36 +3,27 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "frog vercel-build",
+    "build": "tsc && frog vercel-build",
     "dev": "frog dev",
     "deploy": "vercel",
-    "start": "npm run dev"
+    "start": "node build/index.js"
   },
   "dependencies": {
-    "@hono/node-server": "latest",
-    "@neynar/nodejs-sdk": "^2.19.0",
-    "@shuding/opentype.js": "^1.3.5",
-    "@types/react": "^19.0.12",
+    "@farcaster/hub-nodejs": "^0.12.7",
+    "@hono/node-server": "^1.12.0",
+    "@neynar/nodejs-sdk": "^2.23.0",
     "dotenv": "^16.4.7",
     "frog": "^0.18.2",
-    "hashids": "^2.3.0",
-    "hono": "^4",
+    "hono": "^4.0.0",
     "moralis": "^2.27.2",
-    "ratelimiter": "^3.4.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "satori": "^0.12.1",
-    "sqlite3": "^5.1.7",
-    "systeminformation": "^5.22.11", 
     "yoga-wasm-web": "^0.3.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "@types/ratelimiter": "^3.4.6",
     "ts-node": "^10.9.2",
-    "typescript": "latest"
-  },
-  "engines": {
-    "node": ">=19.9.0"
+    "typescript": "^5.5.4"
   }
 }
