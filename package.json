@@ -9,7 +9,8 @@
     "build": "tsc --skipLibCheck && frog vercel-build",
     "dev": "frog dev",
     "deploy": "vercel",
-    "start": "node build/index.js"
+    "start": "node build/index.js & node railway-monitor.js",
+    "monitor": "node railway-monitor.js"
   },
   "dependencies": {
     "@farcaster/hub-nodejs": "^0.12.7",

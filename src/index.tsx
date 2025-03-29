@@ -5,6 +5,7 @@ import { neynar } from 'frog/middlewares';
 import fs from 'fs/promises';
 import Moralis from 'moralis';
 import { NeynarAPIClient, Configuration } from "@neynar/nodejs-sdk";
+import { exec } from 'child_process';
 
 // تایپ‌ها
 interface ApiRow {
@@ -20,6 +21,103 @@ interface ApiRow {
 interface NFTHolder {
   wallet: string;
   count: number;
+}
+
+// سیستم مانیتورینگ خطاهای HTTP
+interface HttpLog {
+  timestamp: number;
+  status: number;
+  path: string;
+}
+
+const httpLogs: HttpLog[] = [];
+const MAX_LOGS_TO_KEEP = 10;
+
+// تابع اضافه کردن لاگ
+function addHttpLog(status: number, path: string) {
+  const log: HttpLog = {
+    timestamp: Date.now(),
+    status,
+    path
+  };
+  
+  httpLogs.unshift(log); // افزودن به ابتدای آرایه
+  
+  if (httpLogs.length > MAX_LOGS_TO_KEEP) {
+    httpLogs.pop(); // حذف قدیمی‌ترین لاگ
+  }
+  
+  // بررسی تعداد خطاهای 499 و 500
+  checkErrorsAndRestart();
+}
+
+// تابع بررسی خطاها و ریستارت در صورت نیاز
+function checkErrorsAndRestart() {
+  const errorCount = httpLogs.filter(log => log.status === 499 || log.status === 500).length;
+  
+  console.log(`[Monitor] Current error count in last ${httpLogs.length} logs: ${errorCount}`);
+  
+  if (errorCount > 4 && httpLogs.length >= 5) {
+    console.log('[Monitor] Error threshold exceeded! Restarting application...');
+    
+    // استفاده از setTimeout برای اطمینان از اتمام پردازش فعلی
+    setTimeout(() => {
+      exec('kill 1', (error) => {
+        if (error) {
+          console.error('[Monitor] Failed to restart:', error);
+        }
+      });
+    }, 1000);
+  }
+}
+
+// تابع ارسال لاگ HTTP به مانیتور
+async function sendLogToMonitor(status: number, path: string) {
+  try {
+    const logData = {
+      timestamp: Date.now(),
+      status,
+      path
+    };
+    
+    // ارسال به سرور مانیتور
+    const options = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(logData),
+      // برای جلوگیری از بلاک شدن ارسال لاگ با تایم‌اوت کوتاه
+      signal: AbortSignal.timeout(500)
+    };
+    
+    fetch('http://localhost:3001/log', options).catch(error => {
+      console.error('[LogSender] Failed to send log to monitor:', error.message);
+    });
+  } catch (error) {
+    // خطاهای ارسال لاگ را نادیده می‌گیریم تا عملکرد اصلی برنامه تحت تأثیر قرار نگیرد
+    console.error('[LogSender] Error preparing log:', error);
+  }
+}
+
+// میدلور برای ثبت وضعیت درخواست‌ها
+function logStatusMiddleware(c: any, next: () => Promise<any>) {
+  return next().then(result => {
+    const status = result?.status || 200;
+    const path = c.req.path || '/';
+    
+    // ارسال لاگ به مانیتور
+    if (status >= 400) {
+      console.log(`[HTTP] Request ${path} returned status ${status}`);
+      sendLogToMonitor(status, path);
+    }
+    
+    return result;
+  }).catch(error => {
+    console.error(`[HTTP] Error processing request:`, error);
+    sendLogToMonitor(500, '/');
+    throw error;
+  });
 }
 
 // ثابت‌ها
@@ -166,6 +264,7 @@ export const app = new Frog({
 
 app.use(neynar({ apiKey: '0AFD6D12-474C-4AF0-B580-312341F61E17', features: ['interactor', 'cast'] }));
 app.use('/*', serveStatic({ root: './public' }));
+app.use('/*', logStatusMiddleware);
 
 async function executeQuery(queryId: string): Promise<string | null> {
   console.log(`[API] Executing Query ${queryId} (Request #${++apiRequestCount}) - 1 credit consumed`);
