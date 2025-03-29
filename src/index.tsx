@@ -710,10 +710,10 @@ app.frame('/', async (c) => {
                 style={{
                   position: "absolute",
                   top: "64%",
-                  left: "30%",
-                  fontSize: "20px",
+                  left: "36%",
+                  color: "#28a745",
+                  fontSize: "33px",
                   fontWeight: "bold",
-
                 }}
               >
                 {remainingAllowance}
@@ -823,7 +823,7 @@ app.frame('/', async (c) => {
                 }}
               />
             )}
-            {reduceEndSeason === "" && (
+            {(reduceEndSeason === "" || isNaN(Number(reduceEndSeason))) && (
               <img
                 src="/tik.png"
                 width="55"
