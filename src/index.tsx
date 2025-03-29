@@ -253,7 +253,7 @@ function shouldUpdateApi(lastUpdated: number, isCacheEmpty: boolean): boolean {
   const utcMinutes = now.getUTCMinutes();
   const totalMinutes = utcHours * 60 + utcMinutes;
   // آپدیت‌ها در ۰۰:۰۰ (0)، ۰۶:۰۰ (360)، ۱۲:۰۰ (720) و ۲۱:۰۰ (1260) UTC
-  const updateTimes = [0, 360,648, 720,990, 1260];
+  const updateTimes = [0, 360, 648, 990, 1027, 1260];
 
   if (isCacheEmpty) {
     console.log(`[UpdateCheck] Cache is empty. Allowing immediate update at ${utcHours}:${utcMinutes} UTC`);
