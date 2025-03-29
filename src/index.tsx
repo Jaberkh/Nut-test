@@ -710,9 +710,9 @@ app.frame('/', async (c) => {
                 style={{
                   position: "absolute",
                   top: "64%",
-                  left: "36%",
+                  left: "33%",
                   color: "#28a745",
-                  fontSize: "33px",
+                  fontSize: "28px",
                   fontWeight: "bold",
                 }}
               >
