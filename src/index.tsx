@@ -55,7 +55,7 @@ const NEW_NFT_CONTRACT_ADDRESS = '0x36d4a78d0FB81A16A1349b8f95AF7d5d3CA25081';
 const MORALIS_API_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6ImE1MjE5NDlkLTU2MWItNDE5NC1hMmI5LTQxZTgxMDA4M2E3NyIsIm9yZ0lkIjoiNDM3MDA0IiwidXNlcklkIjoiNDQ5NTY1IiwidHlwZUlkIjoiNmJmNzAzZGItNmM1Ni00NGViLTg4ZmMtNjJjOWMzMTk4Zjc2IiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NDIzMzMzNTksImV4cCI6NDg5ODA5MzM1OX0.Lv8JHB8RrbC7UWLJXHijd3kUsaaqmfUt14QCcW71JU0';
 
 // دکمه TRUE/FALSE برای هولدرهای بدون NFT
-const ALLOW_NON_HOLDERS = true;
+const ALLOW_NON_HOLDERS = false;
 
 // تنظیمات Neynar با API Key جدید
 const config = new Configuration({ apiKey: '0AFD6D12-474C-4AF0-B580-312341F61E17' });
@@ -705,17 +705,38 @@ app.frame('/', async (c) => {
             >
               {totalPeanutCount}
             </p>
-            <p
-              style={{
-                position: "absolute",
-                top: "64%",
-                left: "36%",
-                color: "#28a745",
-                fontSize: "33px",
-              }}
-            >
-              {remainingAllowance}
-            </p>
+            {remainingAllowance === 'mint your allowance' ? (
+              <p
+                style={{
+                  position: "absolute",
+                  top: "64%",
+                  left: "36%",
+                  color: "#e83e8c", // Pink color for better visibility
+                  fontSize: "28px",
+                  fontWeight: "bold",
+                  textShadow: "0px 0px 5px rgba(255,255,255,0.5)",
+                  cursor: "pointer",
+                  background: "linear-gradient(45deg, #ff4081, #7b1fa2)",
+                  padding: "2px 10px",
+                  borderRadius: "8px",
+                  border: "2px solid white",
+                }}
+              >
+                {remainingAllowance}
+              </p>
+            ) : (
+              <p
+                style={{
+                  position: "absolute",
+                  top: "64%",
+                  left: "36%",
+                  color: "#28a745",
+                  fontSize: "33px",
+                }}
+              >
+                {remainingAllowance}
+              </p>
+            )}
             <p
               style={{
                 position: "absolute",
