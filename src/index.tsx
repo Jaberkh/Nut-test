@@ -171,7 +171,7 @@ async function executeQuery(queryId: string): Promise<string | null> {
   console.log(`[API] Executing Query ${queryId} (Request #${++apiRequestCount}) - 1 credit consumed`);
   try {
     const response = await fetchWithTimeoutAndRetry(
-      `https://api.dune.com/api/v1/query/${queryId}/execute?limit=5000`,
+      `https://api.dune.com/api/v1/query/${queryId}/execute?limit=8000`,
       {
         method: 'POST',
         headers: { 'X-Dune-API-Key': 'jaXtS6fQFj8jFgU2Kk11NYa1k0Xt41J0' }
@@ -193,7 +193,7 @@ async function fetchQueryResult(executionId: string, queryId: string): Promise<A
   console.log(`[API] Fetching results for Query ${queryId} with execution ID ${executionId} (Request #${++apiRequestCount}) - 1 credit consumed`);
   try {
     const response = await fetchWithTimeoutAndRetry(
-      `https://api.dune.com/api/v1/execution/${executionId}/results?limit=5000`,
+      `https://api.dune.com/api/v1/execution/${executionId}/results?limit=8000`,
       {
         method: 'GET',
         headers: { 'X-Dune-API-Key': 'jaXtS6fQFj8jFgU2Kk11NYa1k0Xt41J0' }
