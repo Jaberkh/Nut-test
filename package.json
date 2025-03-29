@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc && frog vercel-build",
+    "build": "tsc --skipLibCheck && frog vercel-build",
     "dev": "frog dev",
     "deploy": "vercel",
     "start": "node build/index.js"
