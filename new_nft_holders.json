@@ -121,7 +121,31 @@
       "count": 1
     },
     {
+      "wallet": "0x46e6f27fe7fe5bec6cbfaec747d499935c06a9b3",
+      "count": 1
+    },
+    {
+      "wallet": "0x9e2e41f9051cf32221730a52ee59449ad4237ef5",
+      "count": 1
+    },
+    {
+      "wallet": "0xceff6dc174c6e77ed2402ebb873d2cafe930db00",
+      "count": 1
+    },
+    {
       "wallet": "0xb80522abbd522c2fa5c55c6d8da14150fdfb2bdf",
+      "count": 1
+    },
+    {
+      "wallet": "0x3060ce12ba55ef8d3c92e1b9e596c102adf90b2d",
+      "count": 1
+    },
+    {
+      "wallet": "0xcc05e021de9b5dac6796e145e12460ed20da56a2",
+      "count": 1
+    },
+    {
+      "wallet": "0x6b11320a5ee36ea98430b4fde374a92fd7e1b8d4",
       "count": 1
     },
     {
@@ -145,5 +169,5 @@
       "count": 1
     }
   ],
-  "last_updated": 1743317015653
+  "last_updated": 1743345142018
 }
