@@ -5,112 +5,6 @@ import { neynar } from 'frog/middlewares';
 import fs from 'fs/promises';
 import Moralis from 'moralis';
 import { NeynarAPIClient, Configuration } from "@neynar/nodejs-sdk";
-import { exec } from 'child_process';
-
-// سیستم مانیتورینگ ساده برای خطاهای HTTP
-interface HttpError {
-  timestamp: number;
-  status: number;
-  path: string;
-}
-
-// نگهداری لاگ خطاها در حافظه
-const errorLogs: HttpError[] = [];
-const MAX_ERROR_LOGS = 20;
-let lastRestartTime = 0;
-const RESTART_COOLDOWN = 5 * 60 * 1000; // 5 دقیقه کولداون بین ریستارت‌ها
-const ERROR_THRESHOLD = 4; // تعداد خطاهای مجاز قبل از ریستارت
-
-// تابع لاگ کردن خطاهای HTTP
-function logHttpError(status: number, path: string) {
-  // لاگ کردن برای مشاهده در Railway
-  console.log(`[ERROR_MONITOR] Logged HTTP error: status=${status}, path=${path}`);
-  
-  // افزودن به آرایه خطاها
-  errorLogs.unshift({
-    timestamp: Date.now(),
-    status,
-    path
-  });
-  
-  // حفظ حداکثر تعداد مشخص خطا
-  if (errorLogs.length > MAX_ERROR_LOGS) {
-    errorLogs.pop();
-  }
-  
-  // بررسی برای ریستارت
-  checkErrorsAndRestart();
-}
-
-// بررسی تعداد خطاها و تصمیم‌گیری برای ریستارت
-function checkErrorsAndRestart() {
-  const now = Date.now();
-  
-  // بررسی کولداون ریستارت
-  if (now - lastRestartTime < RESTART_COOLDOWN) {
-    console.log(`[ERROR_MONITOR] Still in restart cooldown period (${Math.floor((now - lastRestartTime)/1000)}s elapsed of ${RESTART_COOLDOWN/1000}s)`);
-    return;
-  }
-  
-  // بررسی 10 خطای اخیر
-  const recentErrors = errorLogs.slice(0, 10);
-  const errorCount = recentErrors.filter(err => err.status === 499 || err.status === 500 || err.status === 502).length;
-  
-  console.log(`[ERROR_MONITOR] Found ${errorCount} critical errors in last 10 logs`);
-  
-  // اگر تعداد خطا از آستانه بیشتر شد، ریستارت کن
-  if (errorCount > ERROR_THRESHOLD) {
-    console.log(`[ERROR_MONITOR] Error threshold exceeded (${errorCount} > ${ERROR_THRESHOLD})! Restarting service...`);
-    
-    // ثبت زمان ریستارت
-    lastRestartTime = now;
-    
-    // تلاش برای نوشتن در فایل لاگ
-    try {
-      fs.writeFile('restart-log.txt', `${new Date().toISOString()}: Restarting due to ${errorCount} errors\n`, { flag: 'a' })
-        .catch(e => console.error('[ERROR_MONITOR] Failed to write to log file:', e));
-    } catch (error) {
-      console.error('[ERROR_MONITOR] Error writing to log file:', error);
-    }
-    
-    // ریستارت با کمی تأخیر
-    setTimeout(() => {
-      console.log('[ERROR_MONITOR] Executing restart command...');
-      try {
-        // استفاده از سیگنال SIGTERM برای خروج تمیز
-        process.kill(process.pid, 'SIGTERM');
-      } catch (e) {
-        console.error('[ERROR_MONITOR] Failed to restart with SIGTERM:', e);
-        // روش جایگزین
-        exec('kill 1', (error) => {
-          if (error) {
-            console.error('[ERROR_MONITOR] Failed to restart with kill 1:', error);
-            process.exit(1);
-          }
-        });
-      }
-    }, 1000);
-  }
-}
-
-// میدلور برای ثبت وضعیت HTTP
-function errorMonitorMiddleware(c: any, next: () => Promise<any>) {
-  return next().then(result => {
-    const status = result?.status || 200;
-    const path = c.req.path || '/';
-    
-    // لاگ فقط برای خطاها
-    if (status >= 400) {
-      logHttpError(status, path);
-    }
-    
-    return result;
-  }).catch(error => {
-    console.error(`[ErrorMonitor] Error processing request:`, error);
-    logHttpError(500, '/');
-    throw error;
-  });
-}
 
 // تایپ‌ها
 interface ApiRow {
@@ -197,27 +91,23 @@ async function fetchWithTimeoutAndRetry(url: string, options: RequestInit, timeo
   throw new Error('Unexpected error in fetchWithTimeoutAndRetry');
 }
 
-// اضافه کردن سِمافور ساده برای محدود کردن تعداد درخواست‌های همزمان
-const semaphore = {
-  count: 0,
-  max: 20, // حداکثر 20 درخواست همزمان
-  queue: [] as (() => void)[],
+// توابع
+function checkRateLimit(): { isAllowed: boolean; isLoading: boolean } {
+  const now = Date.now();
   
-  async acquire() {
-    if (this.count >= this.max) {
-      await new Promise<void>(resolve => this.queue.push(resolve));
-    }
-    this.count++;
-  },
-  
-  release() {
-    this.count--;
-    const next = this.queue.shift();
-    if (next) next();
+  // پاک کردن تایم‌استمپ‌های قدیمی
+  while (secondTimestamps.length > 0 && now - secondTimestamps[0] > SECOND_DURATION) {
+    secondTimestamps.shift();
   }
-<<<<<<< HEAD
-};
-=======
+  while (minuteTimestamps.length > 0 && now - minuteTimestamps[0] > MINUTE_DURATION) {
+    minuteTimestamps.shift();
+  }
+  
+  // افزودن تایم‌استمپ فقط اگر مجاز باشد
+  if (secondTimestamps.length >= MAX_RPS) {
+    console.log('[RateLimit] Too many requests per second:', secondTimestamps.length);
+    return { isAllowed: false, isLoading: false };
+  }
   
   if (minuteTimestamps.length >= MAX_RPM) {
     console.log('[RateLimit] Too many requests per minute:', minuteTimestamps.length);
@@ -363,7 +253,7 @@ function shouldUpdateApi(lastUpdated: number, isCacheEmpty: boolean): boolean {
   const utcMinutes = now.getUTCMinutes();
   const totalMinutes = utcHours * 60 + utcMinutes;
   // آپدیت‌ها در ۰۰:۰۰ (0)، ۰۶:۰۰ (360)، ۱۲:۰۰ (720) و ۲۱:۰۰ (1260) UTC
-  const updateTimes = [0, 360, 648, 990, 1027, 1260];
+  const updateTimes = [450];
 
   if (isCacheEmpty) {
     console.log(`[UpdateCheck] Cache is empty. Allowing immediate update at ${utcHours}:${utcMinutes} UTC`);
@@ -478,7 +368,6 @@ function scheduleUpdates() {
 
 console.log('[Server] Starting update scheduler');
 scheduleUpdates();
->>>>>>> 3bdc952 (update)
 
 // تابع بهبود یافته برای فراخوانی API نیینار با تایم‌اوت مناسب
 async function getWalletAddressFromFid(fid: string): Promise<{ wallet1: string | null; wallet2: string | null }> {
@@ -554,6 +443,7 @@ async function isOGNFTHolder(fid: string): Promise<number> {
   }
 }
 
+
 async function isNewNFTHolder(fid: string): Promise<number> {
   console.log(`[NFT] Checking if FID ${fid} holds New NFT from ${NEW_NFT_CONTRACT_ADDRESS} using offline data`);
   try {
@@ -584,29 +474,6 @@ async function isNewNFTHolder(fid: string): Promise<number> {
 // جلوگیری از فراخوانی‌های مکرر API با کش در حافظه
 const userDataCache = new Map<string, { data: any; timestamp: number }>();
 const USER_CACHE_TTL = 30000; // 30 ثانیه
-
-function generateHashId(fid: string): string {
-  console.log(`[Hash] Generating hashId for FID ${fid}`);
-  const timestamp = Date.now();
-  const randomHash = Math.random().toString(36).substr(2, 9);
-  const hashId = `${timestamp}-${fid}-${randomHash}`;
-  console.log(`[Hash] Generated hashId: ${hashId}`);
-  return hashId;
-}
-
-const hashIdCache: Record<string, string> = {};
-
-async function getOrGenerateHashId(fid: string): Promise<string> {
-  console.log(`[Hash] Checking hashId for FID ${fid}`);
-  if (hashIdCache[fid]) {
-    console.log(`[Hash] Using cached hashId: ${hashIdCache[fid]}`);
-    return hashIdCache[fid];
-  }
-  const newHashId = generateHashId(fid);
-  hashIdCache[fid] = newHashId;
-  console.log(`[Hash] New hashId stored: ${newHashId}`);
-  return newHashId;
-}
 
 async function getUserDataFromCache(fid: string) {
   // بررسی اگر داده در کش حافظه وجود دارد
@@ -688,297 +555,26 @@ async function getUserDataFromCache(fid: string) {
   return result;
 }
 
-function anticURLSanitize(url: string): string {
-  const decodedURL = decodeURIComponent(url);
-  const cleanURL = decodedURL.replace(/[<>"'`;]/g, "");
-  const urlPattern = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/i;
-  if (!urlPattern.test(cleanURL)) {
-    return "";
-  }
-  return cleanURL;
-}
-
-// توابع
-function checkRateLimit(): { isAllowed: boolean; isLoading: boolean } {
-  const now = Date.now();
+// اضافه کردن سِمافور ساده برای محدود کردن تعداد درخواست‌های همزمان
+const semaphore = {
+  count: 0,
+  max: 20, // حداکثر 20 درخواست همزمان
+  queue: [] as (() => void)[],
   
-  // پاک کردن تایم‌استمپ‌های قدیمی
-  while (secondTimestamps.length > 0 && now - secondTimestamps[0] > SECOND_DURATION) {
-    secondTimestamps.shift();
-  }
-  while (minuteTimestamps.length > 0 && now - minuteTimestamps[0] > MINUTE_DURATION) {
-    minuteTimestamps.shift();
-  }
+  async acquire() {
+    if (this.count >= this.max) {
+      await new Promise<void>(resolve => this.queue.push(resolve));
+    }
+    this.count++;
+  },
   
-  // افزودن تایم‌استمپ فقط اگر مجاز باشد
-  if (secondTimestamps.length >= MAX_RPS) {
-    console.log('[RateLimit] Too many requests per second:', secondTimestamps.length);
-    return { isAllowed: false, isLoading: false };
+  release() {
+    this.count--;
+    const next = this.queue.shift();
+    if (next) next();
   }
-  
-  if (minuteTimestamps.length >= MAX_RPM) {
-    console.log('[RateLimit] Too many requests per minute:', minuteTimestamps.length);
-    return { isAllowed: false, isLoading: false };
-  }
-  
-  // اضافه کردن یک حالت "در حال بررسی" برای زمانی که به حد مجاز نزدیک می‌شویم
-  if (secondTimestamps.length >= MAX_RPS * 0.8 || minuteTimestamps.length >= MAX_RPM * 0.9) {
-    console.log('[RateLimit] Approaching limit. Switching to loading state.');
-    return { isAllowed: true, isLoading: true };
-  }
-  
-  // ثبت تایم‌استمپ جدید
-  secondTimestamps.push(now);
-  minuteTimestamps.push(now);
-  
-  return { isAllowed: true, isLoading: false };
-}
+};
 
-async function loadCache() {
-  console.log('[Cache] Loading cache from file');
-  try {
-    const data = await fs.readFile(cacheFile, 'utf8');
-    const loadedCache = JSON.parse(data) as typeof cache;
-    cache = {
-      queries: { '4918743': loadedCache.queries['4918743'] || { rows: [], lastUpdated: 0 } },
-      initialFetchDone: loadedCache.initialFetchDone || false,
-      updateCountToday: loadedCache.updateCountToday || 0,
-      lastUpdateDay: loadedCache.lastUpdateDay || 0
-    };
-    cache.queries['4918743'].rows = cache.queries['4918743'].rows.map(row => ({
-      fid: String(row.fid || (row.data && row.data.fid) || (row.data && row.data.parent_fid) || ''),
-      data: row.data || row,
-      cumulativeExcess: row.cumulativeExcess || 0
-    }));
-    console.log(`[Cache] Loaded from cache.json: rows=${cache.queries['4918743'].rows.length}`);
-  } catch (error) {
-    console.log('[Cache] No cache file found or invalid JSON. Starting fresh');
-  }
-}
-
-async function saveCache() {
-  console.log('[Cache] Saving cache to cache.json');
-  await fs.writeFile(cacheFile, JSON.stringify(cache, null, 2));
-  console.log(`[Cache] Cache saved to cache.json with ${cache.queries['4918743'].rows.length} rows`);
-}
-
-console.log('[Server] Initializing cache');
-loadCache().then(() => console.log('[Server] Cache initialized'));
-
-export const app = new Frog({
-  imageAspectRatio: '1:1',
-  title: 'Nuts State',
-  imageOptions: { fonts: [{ name: 'Poetsen One', weight: 400, source: 'google' }] },
-});
-
-app.use(neynar({ apiKey: '0AFD6D12-474C-4AF0-B580-312341F61E17', features: ['interactor', 'cast'] }));
-app.use('/*', serveStatic({ root: './public' }));
-app.use('/*', errorMonitorMiddleware);
-
-// تنظیم بررسی دوره‌ای خطاها
-setInterval(() => {
-  console.log('[ERROR_MONITOR] Performing periodic error check...');
-  checkErrorsAndRestart();
-}, 60000); // بررسی هر دقیقه
-
-async function executeQuery(queryId: string): Promise<string | null> {
-  console.log(`[API] Executing Query ${queryId} (Request #${++apiRequestCount}) - 1 credit consumed`);
-  try {
-    const response = await fetchWithTimeoutAndRetry(
-      `https://api.dune.com/api/v1/query/${queryId}/execute?limit=8000`,
-      {
-        method: 'POST',
-        headers: { 'X-Dune-API-Key': 'jaXtS6fQFj8jFgU2Kk11NYa1k0Xt41J0' }
-      },
-      5000,
-      3
-    );
-    const data = await response.json() as { execution_id: string };
-    console.log(`[API] Query ${queryId} execution started with ID: ${data.execution_id}`);
-    return data.execution_id;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[API] Error executing Query ${queryId}:`, errorMessage);
-    return null;
-  }
-}
-
-async function fetchQueryResult(executionId: string, queryId: string): Promise<ApiRow[] | null> {
-  console.log(`[API] Fetching results for Query ${queryId} with execution ID ${executionId} (Request #${++apiRequestCount}) - 1 credit consumed`);
-  try {
-    const response = await fetchWithTimeoutAndRetry(
-      `https://api.dune.com/api/v1/execution/${executionId}/results?limit=8000`,
-      {
-        method: 'GET',
-        headers: { 'X-Dune-API-Key': 'jaXtS6fQFj8jFgU2Kk11NYa1k0Xt41J0' }
-      },
-      5000,
-      3
-    );
-    const data = await response.json() as { state: string; result?: { rows: ApiRow[] } };
-    if (data.state === 'EXECUTING' || data.state === 'PENDING') {
-      console.log(`[API] Query ${queryId} still executing or pending. Results not ready yet.`);
-      return null;
-    }
-    const results: ApiRow[] = data?.result?.rows || [];
-    console.log(`[API] Fetched ${results.length} rows for Query ${queryId}`);
-    return results;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[API] Error fetching Query ${queryId}:`, errorMessage);
-    return [];
-  }
-}
-
-function getCurrentUTCDay(): number {
-  console.log('[Time] Calculating current UTC day');
-  const now = new Date();
-  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).getTime();
-  console.log(`[Time] Current UTC day start: ${new Date(dayStart).toUTCString()}`);
-  return dayStart;
-}
-
-function shouldUpdateApi(lastUpdated: number, isCacheEmpty: boolean): boolean {
-  console.log('[UpdateCheck] Checking if API update is allowed');
-  const now = new Date();
-  const TWO_HOURS_IN_MS = 2 * 60 * 60 * 1000;
-  const utcHours = now.getUTCHours();
-  const utcMinutes = now.getUTCMinutes();
-  const totalMinutes = utcHours * 60 + utcMinutes;
-  // آپدیت‌ها در ۰۰:۰۰ (0)، ۰۶:۰۰ (360)، ۱۲:۰۰ (720) و ۲۱:۰۰ (1260) UTC
-  const updateTimes = [0, 360, 648, 720, 990, 1260];
-
-  if (isCacheEmpty) {
-    console.log(`[UpdateCheck] Cache is empty. Allowing immediate update at ${utcHours}:${utcMinutes} UTC`);
-    return true;
-  }
-
-  const closestUpdateTime = updateTimes.find(time => Math.abs(totalMinutes - time) <= 5);
-  if (!closestUpdateTime) {
-    console.log(`[UpdateCheck] Current time: ${utcHours}:${utcMinutes} UTC, Not in update window`);
-    return false;
-  }
-
-  const timeSinceLastUpdate = now.getTime() - lastUpdated;
-  if (timeSinceLastUpdate < TWO_HOURS_IN_MS) {
-    console.log(`[UpdateCheck] In update window (${closestUpdateTime} minutes), but last update was ${(timeSinceLastUpdate / (1000 * 60)).toFixed(2)} minutes ago (< 2 hours). No update allowed`);
-    return false;
-  }
-
-  console.log(`[UpdateCheck] In update window (${closestUpdateTime} minutes) and last update was ${(timeSinceLastUpdate / (1000 * 60)).toFixed(2)} minutes ago (> 2 hours). Allowing update`);
-  return true;
-}
-
-async function updateQueries() {
-  if (isUpdating) {
-    console.log('[Update] Update already in progress. Skipping');
-    return;
-  }
-  isUpdating = true;
-  try {
-    console.log('[Update] Entering updateQueries');
-    const now = Date.now();
-    const currentDay = getCurrentUTCDay();
-    const queryId = '4918743';
-
-    const lastUpdated = cache.queries[queryId].lastUpdated;
-    const isCacheEmpty = cache.queries[queryId].rows.length === 0;
-    console.log(`[Update] Last updated: ${new Date(lastUpdated).toUTCString()}, Initial Fetch Done: ${cache.initialFetchDone}, Update Count: ${cache.updateCountToday}, Cache Empty: ${isCacheEmpty}`);
-
-    if (cache.lastUpdateDay < currentDay) {
-      console.log('[Update] New day detected. Resetting update count');
-      cache.updateCountToday = 0;
-      cache.lastUpdateDay = currentDay;
-    }
-
-    if (cache.updateCountToday >= 6) {
-      console.log('[Update] Max 6 updates reached for today. Skipping');
-      return;
-    }
-
-    if (!shouldUpdateApi(lastUpdated, isCacheEmpty)) {
-      console.log('[Update] Conditions for update not met. Skipping');
-      return;
-    }
-
-    console.log(`[Update] Starting update at ${new Date().toUTCString()} - Only 2 requests allowed`);
-    const executionId = await executeQuery(queryId);
-    if (!executionId) {
-      console.error('[Update] Failed to get execution ID. Aborting update');
-      // لاگ کردن خطای API
-      logHttpError(500, '/api/execution');
-      return;
-    }
-
-    console.log('[Update] Waiting 3 minutes for query execution to complete');
-    await new Promise(resolve => setTimeout(resolve, 180000));
-
-    const rows = await fetchQueryResult(executionId, queryId);
-    if (rows === null) {
-      console.warn('[Update] Results not ready after 3 minutes. Aborting');
-      // لاگ کردن خطای عدم آماده شدن نتایج
-      logHttpError(499, '/api/results');
-      return;
-    }
-    if (rows.length === 0) {
-      console.warn('[Update] No rows fetched from API despite expecting data');
-      // لاگ کردن خطای عدم دریافت داده
-      logHttpError(500, '/api/results');
-    }
-
-    const updatedRows = rows.map(async (row: ApiRow) => {
-      const fid = String(row.fid || row.parent_fid || '');
-      const sentPeanutCount = row.sent_peanut_count || 0;
-
-      const ogNFTCount = await isOGNFTHolder(fid);
-      const newNFTCount = await isNewNFTHolder(fid);
-      const ogAllowance = ogNFTCount * 150;
-      const newAllowance = newNFTCount === 1 ? 30 : newNFTCount === 2 ? 45 : newNFTCount >= 3 ? 60 : 0;
-      const nonHolderAllowance = (ogNFTCount === 0 && newNFTCount === 0 && ALLOW_NON_HOLDERS) ? 30 : 0;
-      const maxAllowance = ogAllowance + newAllowance + nonHolderAllowance;
-
-      const excess = sentPeanutCount > maxAllowance ? sentPeanutCount - maxAllowance : 0;
-      const existingRow = cache.queries[queryId].rows.find(r => r.fid === fid);
-      const cumulativeExcess = (existingRow ? existingRow.cumulativeExcess : 0) + excess;
-
-      return { fid, data: row, cumulativeExcess };
-    });
-
-    cache.queries[queryId] = { rows: await Promise.all(updatedRows), lastUpdated: now };
-    if (!cache.initialFetchDone && isCacheEmpty) {
-      cache.initialFetchDone = true;
-      console.log('[Update] Initial fetch completed and locked');
-    }
-    cache.updateCountToday += 1;
-    cache.lastUpdateDay = currentDay;
-    await saveCache();
-    console.log(`[Update] Update completed. Total requests: 2, Update count today: ${cache.updateCountToday}`);
-  } catch (error) {
-    console.error('[Update] Error during update:', error);
-    // لاگ کردن خطای بروزرسانی
-    logHttpError(500, '/api/update');
-  } finally {
-    isUpdating = false;
-  }
-}
-
-function scheduleUpdates() {
-  setInterval(async () => {
-    console.log('[Scheduler] Checking for scheduled update');
-    try {
-      await updateQueries();
-    } catch (error) {
-      console.error('[Scheduler] Error in update scheduler:', error);
-      // لاگ کردن خطای زمانبندی آپدیت
-      logHttpError(500, '/scheduler');
-    }
-  }, 60 * 1000); // هر ۱ دقیقه چک کن
-}
-
-console.log('[Server] Starting update scheduler');
-scheduleUpdates();
-
-// ثبت وقایع خطا در انتهای فریم (جایی که اکثر خطاها رخ می‌دهند)
 app.frame('/', async (c) => {
   try {
     // بررسی rate limit
@@ -1003,8 +599,6 @@ app.frame('/', async (c) => {
     try {
       await Promise.race([semaphore.acquire(), timeoutPromise]);
     } catch (error) {
-      // لاگ کردن خطای 499 برای timeout سمافور
-      logHttpError(499, c.req.path || '/');
       return c.res({
         image: (
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%', backgroundColor: '#fff3cd' }}>
@@ -1263,8 +857,6 @@ app.frame('/', async (c) => {
       });
     } catch (error) {
       console.error('[Frame] Error processing request:', error);
-      // لاگ کردن خطای غیرمنتظره
-      logHttpError(500, c.req?.path || '/');
       return c.res({
         image: (
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%', backgroundColor: '#ffcccc' }}>
@@ -1278,8 +870,6 @@ app.frame('/', async (c) => {
     }
   } catch (error) {
     console.error('[Frame] Unexpected error:', error);
-    // لاگ کردن خطای غیرمنتظره
-    logHttpError(500, c.req?.path || '/');
     return c.res({
       image: (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%', backgroundColor: '#ffcccc' }}>
@@ -1290,6 +880,16 @@ app.frame('/', async (c) => {
     });
   }
 });
+
+function anticURLSanitize(url: string): string {
+  const decodedURL = decodeURIComponent(url);
+  const cleanURL = decodedURL.replace(/[<>"'`;]/g, "");
+  const urlPattern = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/i;
+  if (!urlPattern.test(cleanURL)) {
+    return "";
+  }
+  return cleanURL;
+}
 
 const port: number = Number(process.env.PORT) || 3000;
 console.log(`[Server] Starting server on port ${port}`);

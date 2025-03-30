@@ -109,6 +109,18 @@
       "count": 1
     },
     {
+      "wallet": "0x026609ac27d2d68ca8b0e50fbbdd7541c1ea98ce",
+      "count": 1
+    },
+    {
+      "wallet": "0x540ef425920b64cafa189ddc9cf3abe49a318fe8",
+      "count": 1
+    },
+    {
+      "wallet": "0x3609ca4b9583fa16fa125993d484d6700b358e2f",
+      "count": 1
+    },
+    {
       "wallet": "0xb80522abbd522c2fa5c55c6d8da14150fdfb2bdf",
       "count": 1
     },
@@ -133,9 +145,5 @@
       "count": 1
     }
   ],
-<<<<<<< HEAD
-  "last_updated": 1743264795614
-=======
-  "last_updated": 1743267203783
->>>>>>> 3bdc952 (update)
+  "last_updated": 1743317015653
 }
