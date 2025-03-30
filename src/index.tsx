@@ -171,7 +171,7 @@ async function executeQuery(queryId: string): Promise<string | null> {
   console.log(`[API] Executing Query ${queryId} (Request #${++apiRequestCount}) - 1 credit consumed`);
   try {
     const response = await fetchWithTimeoutAndRetry(
-      `https://api.dune.com/api/v1/query/${queryId}/execute?limit=8000`,
+      `https://api.dune.com/api/v1/query/${queryId}/execute?limit=6500`,
       {
         method: 'POST',
         headers: { 'X-Dune-API-Key': 'jaXtS6fQFj8jFgU2Kk11NYa1k0Xt41J0' }
@@ -193,7 +193,7 @@ async function fetchQueryResult(executionId: string, queryId: string): Promise<A
   console.log(`[API] Fetching results for Query ${queryId} with execution ID ${executionId} (Request #${++apiRequestCount}) - 1 credit consumed`);
   try {
     const response = await fetchWithTimeoutAndRetry(
-      `https://api.dune.com/api/v1/execution/${executionId}/results?limit=8000`,
+      `https://api.dune.com/api/v1/execution/${executionId}/results?limit=6500`,
       {
         method: 'GET',
         headers: { 'X-Dune-API-Key': 'jaXtS6fQFj8jFgU2Kk11NYa1k0Xt41J0' }
@@ -245,36 +245,36 @@ function getCurrentUTCDay(): number {
   console.log(`[Time] Current UTC day start: ${new Date(dayStart).toUTCString()}`);
   return dayStart;
 }
-function shouldUpdateApi(lastUpdated: number, isCacheEmpty: boolean): boolean {
-  console.log('[UpdateCheck] Checking if API update is allowed');
-  const now = new Date();
-  const TWO_HOURS_IN_MS = 2 * 60 * 60 * 1000;
-  const utcHours = now.getUTCHours();
-  const utcMinutes = now.getUTCMinutes();
-  const totalMinutes = utcHours * 60 + utcMinutes;
-  // آپدیت‌ها در ۰۰:۰۰ (0)، ۰۶:۰۰ (360)، ۱۲:۰۰ (720) و ۲۱:۰۰ (1260) UTC
-  const updateTimes = [879];
+// function shouldUpdateApi(lastUpdated: number, isCacheEmpty: boolean): boolean {
+//   console.log('[UpdateCheck] Checking if API update is allowed');
+//   const now = new Date();
+//   const TWO_HOURS_IN_MS = 2 * 60 * 60 * 1000;
+//   const utcHours = now.getUTCHours();
+//   const utcMinutes = now.getUTCMinutes();
+//   const totalMinutes = utcHours * 60 + utcMinutes;
+//   // آپدیت‌ها در ۰۰:۰۰ (0)، ۰۶:۰۰ (360)، ۱۲:۰۰ (720) و ۲۱:۰۰ (1260) UTC
+//   const updateTimes = [0];
 
-  if (isCacheEmpty) {
-    console.log(`[UpdateCheck] Cache is empty. Allowing immediate update at ${utcHours}:${utcMinutes} UTC`);
-    return true;
-  }
+//   if (isCacheEmpty) {
+//     console.log(`[UpdateCheck] Cache is empty. Allowing immediate update at ${utcHours}:${utcMinutes} UTC`);
+//     return true;
+//   }
 
-  const closestUpdateTime = updateTimes.find(time => Math.abs(totalMinutes - time) <= 5);
-  if (!closestUpdateTime) {
-    console.log(`[UpdateCheck] Current time: ${utcHours}:${utcMinutes} UTC, Not in update window`);
-    return false;
-  }
+//   const closestUpdateTime = updateTimes.find(time => Math.abs(totalMinutes - time) <= 5);
+//   if (!closestUpdateTime) {
+//     console.log(`[UpdateCheck] Current time: ${utcHours}:${utcMinutes} UTC, Not in update window`);
+//     return false;
+//   }
 
-  const timeSinceLastUpdate = now.getTime() - lastUpdated;
-  if (timeSinceLastUpdate < TWO_HOURS_IN_MS) {
-    console.log(`[UpdateCheck] In update window (${closestUpdateTime} minutes), but last update was ${(timeSinceLastUpdate / (1000 * 60)).toFixed(2)} minutes ago (< 2 hours). No update allowed`);
-    return false;
-  }
+//   const timeSinceLastUpdate = now.getTime() - lastUpdated;
+//   if (timeSinceLastUpdate < TWO_HOURS_IN_MS) {
+//     console.log(`[UpdateCheck] In update window (${closestUpdateTime} minutes), but last update was ${(timeSinceLastUpdate / (1000 * 60)).toFixed(2)} minutes ago (< 2 hours). No update allowed`);
+//     return false;
+//   }
 
-  console.log(`[UpdateCheck] In update window (${closestUpdateTime} minutes) and last update was ${(timeSinceLastUpdate / (1000 * 60)).toFixed(2)} minutes ago (> 2 hours). Allowing update`);
-  return true;
-}
+//   console.log(`[UpdateCheck] In update window (${closestUpdateTime} minutes) and last update was ${(timeSinceLastUpdate / (1000 * 60)).toFixed(2)} minutes ago (> 2 hours). Allowing update`);
+//   return true;
+// }
 
 async function updateQueries() {
   if (isUpdating) {
@@ -303,10 +303,10 @@ async function updateQueries() {
       return;
     }
 
-    if (!shouldUpdateApi(lastUpdated, isCacheEmpty)) {
-      console.log('[Update] Conditions for update not met. Skipping');
-      return;
-    }
+    // if (!shouldUpdateApi(lastUpdated, isCacheEmpty)) {
+    //   console.log('[Update] Conditions for update not met. Skipping');
+    //   return;
+    // }
 
     console.log(`[Update] Starting update at ${new Date().toUTCString()} - Only 2 requests allowed`);
     const executionId = await executeQuery(queryId);
